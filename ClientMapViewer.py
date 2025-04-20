@@ -122,7 +122,7 @@ if __name__ == "__main__":
 
     while True:
         try:
-            time.sleep(sleeptime)
+            time.sleep(1)
 
             all_players = getAllPlayers()
 
