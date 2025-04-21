@@ -1,4 +1,3 @@
-Flask
 Requests
 selenium
 webdriver_manager
