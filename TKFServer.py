@@ -1,6 +1,6 @@
 # TKFServer.py
 from flask import Flask, request, jsonify
-from datetime import datetime
+from datetime import datetime, timedelta
 
 app = Flask(__name__)
 game_data = {}  # { room_id: { player_id: { 'filename': ..., 'last_updated': ..., 'color': ..., 'style': ... } } }
@@ -13,8 +13,10 @@ def upload():
     room = data['room']
     player = data['player']
     fname = data['filename']
+
     if room not in game_data:
         game_data[room] = {}
+
     if player not in game_data[room]:
         color = PLAYER_COLORS[len(game_data[room]) % len(PLAYER_COLORS)]
     else:
@@ -30,6 +32,18 @@ def upload():
 @app.route('/state/<room_id>', methods=['GET'])
 def state(room_id):
     players = game_data.get(room_id, {})
+    now = datetime.now()
+    expired_players = []
+
+    # Automatically delete expired players (3 minutes)
+    for p, data in players.items(): 
+        if now - data['last_updated'] > timedelta(minutes=3):
+            expired_players.append(p)
+
+    for p in expired_players:
+        print(f"delete expired players {p}")
+        del players[p]
+    
     return jsonify({p: {
         'filename': data['filename'],
         'color': data['color']
