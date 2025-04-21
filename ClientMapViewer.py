@@ -122,7 +122,7 @@ if __name__ == "__main__":
 
     while True:
         try:
-            time.sleep(1)
+            time.sleep(sleeptime)
 
             all_players = getAllPlayers()
 
@@ -152,16 +152,18 @@ if __name__ == "__main__":
                         input.dispatchEvent(new Event('change', { bubbles: true }));
                     """, input_box, fname)
 
-                    print(f"已输入文件名: {fname}")
+                    # print(f"已输入文件名: {fname}")
 
                     ps = wait_and_get_marker_style(driver)
-                    print(f"获取到 marker 样式: {ps}")
+                    # print(f"获取到 marker 样式: {ps}")
 
                     setMarker(driver, pid, ps, color)
-                    print(f"成功设置 marker: {pid}")
+                    print(f"成功绘制玩家: {pid}")
 
                 except Exception as e:
                     print(f"绘制玩家 {pid} 失败: {e}")
-
+        
         except Exception:
             print(traceback.format_exc())
+
+        print('------------------------------------------------------')
