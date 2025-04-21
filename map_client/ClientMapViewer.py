@@ -56,25 +56,28 @@ def getAllPlayers():
     return {}
 
 def getInputBox(driver):
-    return WebDriverWait(driver, 10).until(
+    return WebDriverWait(driver, 1).until(
         EC.presence_of_element_located((By.CSS_SELECTOR, 'input[placeholder="Paste file name here"]'))
     )
 
 def openInputBox(driver):
     try:
-        print("尝试点击 'Where am I?' 按钮以打开输入框")
+        print("尝试点击按钮以打开输入框")
         btn = WebDriverWait(driver, 10).until(
             EC.element_to_be_clickable((By.XPATH, '//button[contains(text(), "Where am i?")]'))
         )
         btn.click()
-        print("已点击按钮，等待输入框出现")
+        # print("已点击按钮，等待输入框出现")
+
         WebDriverWait(driver, 5).until(
             EC.presence_of_element_located((By.CSS_SELECTOR, 'input[placeholder="Paste file name here"]'))
         )
         print("输入框已显示")
+        
     except Exception as e:
-        print(f"打开输入框失败: {e}")
-        exit()
+        # print(f"打开输入框失败, 请手动打开: \n{e}")
+        print(f"打开输入框失败, 尝试再次打开\n-------------------------------------------")
+        openInputBox(driver)
 
 def getMarker(driver: webdriver.Edge):
     marker = driver.find_element(By.XPATH, "//*[@class='marker']")
@@ -97,7 +100,7 @@ def setMarker(driver: webdriver.Edge, id, ps='', color='#f9ff01'):
     driver.execute_script(js)
 
 def wait_and_get_marker_style(driver):
-    WebDriverWait(driver, 5).until(
+    WebDriverWait(driver, 3).until(
         EC.presence_of_element_located((By.XPATH, "//*[@class='marker']"))
     )
     marker = driver.find_element(By.XPATH, "/html/body/div/div/div/div[2]/div/div/div[4]/div")
@@ -115,10 +118,12 @@ if __name__ == "__main__":
         exit()
 
     driver.get('https://tarkov-market.com/maps/streets')
-    time.sleep(3)
+    time.sleep(2)
     openInputBox(driver)
 
     playerList = []
+
+    print('开启绘制：')
 
     while True:
         try:
@@ -162,6 +167,7 @@ if __name__ == "__main__":
 
                 except Exception as e:
                     print(f"绘制玩家 {pid} 失败: {e}")
+                    openInputBox(driver)
         
         except Exception:
             print(traceback.format_exc())
