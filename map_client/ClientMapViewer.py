@@ -112,7 +112,9 @@ def wait_and_get_marker_style(driver):
 
 if __name__ == "__main__":
     try:
-        driver = webdriver.Edge(service=EdgeService(EdgeChromiumDriverManager().install()))
+        # driver = webdriver.Edge(service=EdgeService(EdgeChromiumDriverManager().install()))
+        os.environ["SE_DRIVER_MIRROR_URL"] = "https://msedgedriver.microsoft.com"
+        driver = webdriver.Edge()
     except Exception as e:
         print(f"无法启动 Edge WebDriver: {e}")
         exit()
