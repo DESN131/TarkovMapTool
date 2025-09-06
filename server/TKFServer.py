@@ -2,11 +2,24 @@
 from flask import Flask, request, jsonify
 from datetime import datetime, timedelta
 import os, json, time
+import logging
 
 USE_REDIS = os.getenv("USE_REDIS", "1") == "1"
 REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
 
 app = Flask(__name__)
+
+# 将 Flask 的 logger 交给 gunicorn.error（它会输出到 --error-logfile 指定的位置；你已设为 "-" 即 stderr）
+gunicorn_error_logger = logging.getLogger("gunicorn.error")
+if gunicorn_error_logger.handlers:
+    app.logger.handlers = gunicorn_error_logger.handlers
+    app.logger.setLevel(gunicorn_error_logger.level)
+else:
+    # 保险：若非 gunicorn 环境，也确保能打印到 stdout/stderr
+    stream_handler = logging.StreamHandler()
+    stream_handler.setLevel(logging.INFO)
+    app.logger.addHandler(stream_handler)
+    app.logger.setLevel(logging.INFO)
 
 if USE_REDIS:
     import redis
@@ -19,6 +32,8 @@ if USE_REDIS:
     @app.route('/upload', methods=['POST'])
     def upload():
         data = request.get_json()
+        player = data['player']
+        app.logger.info(f"Player upload: {player}")
         room = data['room']; player = data['player']; fname = data['filename']
         key = room_key(room)
         room_players = r.hgetall(key)
@@ -40,15 +55,38 @@ if USE_REDIS:
         room_players = r.hgetall(key)
         now = int(time.time())
         result = {}
+        expired = []
+
         for p_b, data_b in room_players.items():
             p = p_b.decode()
             d = json.loads(data_b.decode())
             if now - d.get('last_updated', 0) <= EXPIRE_SECONDS:
                 result[p] = {'filename': d['filename'], 'color': d['color']}
             else:
+                expired.append(p)
                 r.hdel(key, p)
+
         if result:
             r.expire(key, EXPIRE_SECONDS)
+
+        # —— 日志部分 —— #
+        # 记录被清理的玩家（如有）
+        for p in expired:
+            app.logger.info(f"[STATE] room={room_id} worker={os.getpid()} expired_player={p}")
+
+        # 记录当前活跃玩家
+        active_players = sorted(result.keys())
+        # 如果担心过长，可以只打前 N 个
+        N = 50
+        shown_players = active_players[:N]
+        more = len(active_players) - len(shown_players)
+        tail = f" (+{more} more)" if more > 0 else ""
+        app.logger.info(
+            f"[STATE] room={room_id} worker={os.getpid()} active_count={len(active_players)} "
+            f"active_players={','.join(shown_players)}{tail}"
+        )
+        # —— 日志结束 —— #
+
         return jsonify(result)
 else:
     # 纯内存后备（开发/应急）
