@@ -1,10 +1,11 @@
 version: "3.9"
 services:
-  web:
+  tkf-map-server:
     build: .
-    container_name: desn131/tkf-map-server
+    image: desn131/tkf-map-server
+    container_name: tkf-map-server
     ports:
-      - "1688:1688"              # 主机:容器
+      - "8688:1688"              # 主机:容器
     environment:
       USE_REDIS: "1"
       REDIS_URL: "redis://redis:6379/0"
