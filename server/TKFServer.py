@@ -1,69 +1,82 @@
 # TKFServer.py
 from flask import Flask, request, jsonify
 from datetime import datetime, timedelta
-from werkzeug.middleware.proxy_fix import ProxyFix
+import os, json, time
+
+USE_REDIS = os.getenv("USE_REDIS", "1") == "1"
+REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
 
 app = Flask(__name__)
-app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1)
 
-game_data = {}  # { room_id: { player_id: { 'filename': ..., 'last_updated': ..., 'color': ..., 'style': ... } } }
+if USE_REDIS:
+    import redis
+    r = redis.Redis.from_url(REDIS_URL)
+    EXPIRE_SECONDS = 180  # 3 min
 
-PLAYER_COLORS = ['#6aff00', '#f9ff01', '#00f6ff', '#ff00d0', '#ff7f0e']
+    PLAYER_COLORS = ['#6aff00', '#f9ff01', '#00f6ff', '#ff00d0', '#ff7f0e']
+    def room_key(room): return f"room:{room}"
 
-@app.route('/upload', methods=['POST'])
-def upload():
-    data = request.get_json()
-    room = data['room']
-    player = data['player']
-    fname = data['filename']
+    @app.route('/upload', methods=['POST'])
+    def upload():
+        data = request.get_json()
+        room = data['room']; player = data['player']; fname = data['filename']
+        key = room_key(room)
+        room_players = r.hgetall(key)
 
-    if room not in game_data:
-        game_data[room] = {}
+        if player.encode() in room_players:
+            old = json.loads(room_players[player.encode()].decode())
+            color = old.get('color', PLAYER_COLORS[0])
+        else:
+            color = PLAYER_COLORS[len(room_players) % len(PLAYER_COLORS)]
 
-    if player not in game_data[room]:
-        color = PLAYER_COLORS[len(game_data[room]) % len(PLAYER_COLORS)]
-    else:
-        color = game_data[room][player]['color']
-    game_data[room][player] = {
-        'filename': fname,
-        'last_updated': datetime.now(),
-        'color': color
-    }
-    print(game_data)
-    return jsonify({'status': 'ok'})
+        payload = {'filename': fname, 'color': color, 'last_updated': int(time.time())}
+        r.hset(key, player, json.dumps(payload))
+        r.expire(key, EXPIRE_SECONDS)
+        return jsonify({'status': 'ok'})
 
-@app.route('/state/<room_id>', methods=['GET'])
-def state(room_id):
-    players = game_data.get(room_id, {})
-    now = datetime.now()
-    expired_players = []
-    client_ip = request.remote_addr
+    @app.route('/state/<room_id>', methods=['GET'])
+    def state(room_id):
+        key = room_key(room_id)
+        room_players = r.hgetall(key)
+        now = int(time.time())
+        result = {}
+        for p_b, data_b in room_players.items():
+            p = p_b.decode()
+            d = json.loads(data_b.decode())
+            if now - d.get('last_updated', 0) <= EXPIRE_SECONDS:
+                result[p] = {'filename': d['filename'], 'color': d['color']}
+            else:
+                r.hdel(key, p)
+        if result:
+            r.expire(key, EXPIRE_SECONDS)
+        return jsonify(result)
+else:
+    # 纯内存后备（开发/应急）
+    game_data = {}
+    PLAYER_COLORS = ['#6aff00', '#f9ff01', '#00f6ff', '#ff00d0', '#ff7f0e']
 
-    # Automatically delete expired players (3 minutes)
-    for p, data in players.items(): 
-        if now - data['last_updated'] > timedelta(minutes=3):
-            expired_players.append(p)
+    @app.route('/upload', methods=['POST'])
+    def upload_mem():
+        data = request.get_json()
+        room = data['room']; player = data['player']; fname = data['filename']
+        room_map = game_data.setdefault(room, {})
+        color = room_map.get(player, {}).get('color',
+                    PLAYER_COLORS[len(room_map) % len(PLAYER_COLORS)])
+        room_map[player] = {'filename': fname, 'last_updated': datetime.now(), 'color': color}
+        return jsonify({'status': 'ok'})
 
-    for p in expired_players:
-        print(f"delete expired players {p}")
-        del players[p]
+    @app.route('/state/<room_id>', methods=['GET'])
+    def state_mem(room_id):
+        players = game_data.get(room_id, {})
+        now = datetime.now()
+        for p in [p for p, d in players.items() if now - d['last_updated'] > timedelta(minutes=3)]:
+            del players[p]
+        return jsonify({p: {'filename': d['filename'], 'color': d['color']} for p, d in players.items()})
 
-    result = {
-        "client_ip": client_ip,
-        "players": {
-            p: {
-                "filename": data["filename"],
-                "color": data["color"]
-            } for p, data in players.items()
-        }
-    }
-    
-    # return jsonify({
-    #         p: {
-    #         'filename': data['filename'],
-    #         'color': data['color']
-    #         } for p, data in players.items()})
+# 健康检查
+@app.route('/health', methods=['GET'])
+def health():
+    return jsonify({'ok': True})
 
-    return jsonify(result)
-
-app.run(host='0.0.0.0', port=5000)
+if __name__ == "__main__":
+    app.run(host='0.0.0.0', port=1688)
